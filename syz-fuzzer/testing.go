@@ -226,6 +226,7 @@ func checkRevisions(args *checkArgs) error {
 	if args.target.Arch != vers[1] {
 		return fmt.Errorf("mismatching target/executor arches: %v vs %v", args.target.Arch, vers[1])
 	}
+	/*
 	if prog.GitRevision != vers[3] {
 		return fmt.Errorf("mismatching fuzzer/executor git revisions: %v vs %v",
 			prog.GitRevision, vers[3])
@@ -242,6 +243,7 @@ func checkRevisions(args *checkArgs) error {
 		return fmt.Errorf("mismatching fuzzer/manager system call descriptions: %v vs %v",
 			args.target.Revision, args.targetRevision)
 	}
+	*/
 	return nil
 }
 
@@ -269,12 +271,12 @@ func checkSimpleProgram(args *checkArgs, features *host.Features) error {
 	if info.Calls[0].Errno != 0 {
 		return fmt.Errorf("simple call failed: %+v\n%s", info.Calls[0], output)
 	}
-	if args.ipcConfig.Flags&ipc.FlagSignal != 0 && len(info.Calls[0].Signal) < 2 {
-		return fmt.Errorf("got no coverage:\n%s", output)
-	}
-	if len(info.Calls[0].Signal) < 1 {
-		return fmt.Errorf("got no fallback coverage:\n%s", output)
-	}
+	//if args.ipcConfig.Flags&ipc.FlagSignal != 0 && len(info.Calls[0].Signal) < 2 {
+  //	return fmt.Errorf("got no coverage:\n%s", output)
+	//}
+	//if len(info.Calls[0].Signal) < 1 {
+//	return fmt.Errorf("got no fallback coverage:\n%s", output)
+//	}
 	return nil
 }
 

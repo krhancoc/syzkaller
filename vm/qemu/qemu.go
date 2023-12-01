@@ -442,7 +442,7 @@ func (inst *instance) boot() error {
 	args = append(args, splitArgs(inst.cfg.QemuArgs, templateDir, inst.index)...)
 	args = append(args,
 		"-device", inst.cfg.NetDev+",netdev=net0",
-		"-netdev", fmt.Sprintf("user,id=net0,restrict=on,hostfwd=tcp:127.0.0.1:%v-:22", inst.port))
+		"-netdev", fmt.Sprintf("user,id=net0,hostfwd=tcp:127.0.0.1:%v-:22", inst.port))
 	if inst.image == "9p" {
 		args = append(args,
 			"-fsdev", "local,id=fsdev0,path=/,security_model=none,readonly",

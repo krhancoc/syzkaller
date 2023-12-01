@@ -14,6 +14,11 @@
 #include <stdlib.h>
 #include <string.h>
 #include <time.h>
+#include <dlfcn.h>
+#include <assert.h>
+
+#include <sys/mman.h>
+#include <sys/kcov.h>
 
 #if !GOOS_windows
 #include <unistd.h>
@@ -280,7 +285,82 @@ static thread_t* last_scheduled;
 // Threads use this variable to access information about themselves.
 static __thread struct thread_t* current_thread;
 
+#if defined(TEMPORAL)
+// Remove Bind and listen
+const int covering[] = {SYS_execve, SYS_mprotect,
+	   SYS_accept4, SYS_accept, SYS_connect, SYS_recvfrom, SYS_socket,
+	   SYS_read, SYS_write, SYS_open, SYS_fcntl, SYS_setsockopt, SYS_getsockopt, SYS_mmap, SYS_kevent};
+const int SIZE_COVER = 15;
+#elif defined(ONLYSERVER)
+const int covering[] = {SYS_execve, SYS_fork, SYS_ptrace, SYS_chmod, SYS_mprotect,
+	   SYS_setgid, SYS_setreuid, SYS_setuid, SYS_accept4, SYS_accept, SYS_bind, SYS_connect, SYS_listen, SYS_recvfrom, SYS_socket,
+	   SYS_read, SYS_write, SYS_open, SYS_fcntl, SYS_setsockopt, SYS_getsockopt, SYS_mmap, SYS_kevent};
+const int SIZE_COVER = 24;
+#else
+const int covering[] = {SYS_read, SYS_write, SYS_open, SYS_openat, SYS_sendmsg, SYS_accept, SYS_fcntl, SYS_bind, SYS_listen,
+	   SYS_socket, SYS_connect, SYS_setsockopt, SYS_getsockopt, SYS_sendto, SYS_mmap, SYS_accept4, SYS_fstatat, SYS_kevent};
+const int SIZE_COVER = 18;
+#endif
 static cover_t extra_cov;
+static bool check_value(int syscall)
+{
+	for (int i = 0; i < SIZE_COVER; i++) {
+		if (syscall == covering[i])
+			return true;
+	}
+
+	return false;
+}
+
+static intptr_t execute_syscall(const call_t* c, intptr_t a[kMaxArgs])
+{
+	if (c->call) {
+		return c->call(a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]);
+	}
+
+#if defined(INCLUSIVE)
+	if (c->sys_nr == INCLUSIVE) {
+		ioctl(current_thread->cov.fd, KIOENABLE, KCOV_MODE_TRACE_PC);
+	}
+#elif defined(EXCLUSIVE)
+	if (c->sys_nr != EXCLUSIVE && check_value(c->sys_nr)) {
+		ioctl(current_thread->cov.fd, KIOENABLE, KCOV_MODE_TRACE_PC);
+	}
+#elif defined(ONLYSERVER)
+	if (check_value(c->sys_nr)) {
+		ioctl(current_thread->cov.fd, KIOENABLE, KCOV_MODE_TRACE_PC);
+	}
+#elif defined(TEMPORAL)
+	if (check_value(c->sys_nr)) {
+		ioctl(current_thread->cov.fd, KIODISABLE, 0);
+	}
+#else
+	ioctl(current_thread->cov.fd, KIOENABLE, KCOV_MODE_TRACE_PC);
+#endif
+
+	auto ret = __syscall(c->sys_nr, a[0], a[1], a[2], a[3], a[4], a[5], a[6], a[7], a[8]);
+#if defined(INCLUSIVE)
+	if (c->sys_nr == INCLUSIVE) {
+		ioctl(current_thread->cov.fd, KIODISABLE, 0);
+	}
+#elif defined(EXCLUSIVE)
+	if (c->sys_nr != EXCLUSIVE && check_value(c->sys_nr)) {
+		ioctl(current_thread->cov.fd, KIODISABLE, 0);
+	}
+#elif defined(ONLYSERVER)
+	if (check_value(c->sys_nr)) {
+		ioctl(current_thread->cov.fd, KIODISABLE, 0);
+	}
+#elif defined(TEMPORAL)
+	if (check_value(c->sys_nr)) {
+		ioctl(current_thread->cov.fd, KIODISABLE, 0);
+	}
+#else
+	ioctl(current_thread->cov.fd, KIODISABLE, 0);
+#endif
+
+	return ret;
+}
 
 struct res_t {
 	bool executed;
@@ -340,7 +420,6 @@ struct call_reply {
 };
 
 enum {
-	KCOV_CMP_CONST = 1,
 	KCOV_CMP_SIZE1 = 0,
 	KCOV_CMP_SIZE2 = 2,
 	KCOV_CMP_SIZE4 = 4,
@@ -507,7 +586,7 @@ int main(int argc, char** argv)
 		cover_protect(&extra_cov);
 		if (flag_extra_coverage) {
 			// Don't enable comps because we don't use them in the fuzzer yet.
-			cover_enable(&extra_cov, false, true);
+			//cover_enable(&extra_cov, false, true);
 		}
 		char sep = '/';
 #if GOOS_windows
@@ -758,7 +837,7 @@ void execute_one()
 
 	if (cover_collection_required()) {
 		if (!flag_threaded)
-			cover_enable(&threads[0].cov, flag_comparisons, false);
+			// cover_enable(&threads[0].cov, flag_comparisons, false);
 		if (flag_extra_coverage)
 			cover_reset(&extra_cov);
 	}
@@ -1238,7 +1317,7 @@ void* worker_thread(void* arg)
 	thread_t* th = (thread_t*)arg;
 	current_thread = th;
 	if (cover_collection_required())
-		cover_enable(&th->cov, flag_comparisons, false);
+		// cover_enable(&th->cov, flag_comparisons, false);
 	for (;;) {
 		event_wait(&th->ready);
 		event_reset(&th->ready);
